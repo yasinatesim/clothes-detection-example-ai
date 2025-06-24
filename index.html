@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Clothing Detection App</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .upload-section {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-section:hover {
+            border-color: #764ba2;
+            background: rgba(102, 126, 234, 0.05);
+            transform: translateY(-2px);
+        }
+
+        .upload-section input {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            font-size: 1.2rem;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .upload-subtext {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .analysis-section {
+            display: none;
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        .image-container {
+            position: relative;
+            display: inline-block;
+            max-width: 100%;
+            margin: 0 auto;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .image-container img {
+            max-width: 800px;
+            max-height: 600px;
+            width: auto;
+            height: auto;
+            display: block;
+        }
+
+        .image-container canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results-section {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .result-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            transform: translateY(0);
+            transition: all 0.3s ease;
+        }
+
+        .result-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .result-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 10px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .result-card p {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+
+        .confidence-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            margin-top: 15px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: 500;
+        }
+
+        .status.info {
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+
+        .status.success {
+            background: rgba(76, 175, 80, 0.1);
+            color: #4caf50;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+        }
+
+        .status.error {
+            background: rgba(244, 67, 54, 0.1);
+            color: #f44336;
+            border: 1px solid rgba(244, 67, 54, 0.3);
+        }
+
+        .reset-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin: 20px auto;
+            display: block;
+            transition: all 0.3s ease;
+        }
+
+        .reset-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .detection-info {
+            background: rgba(102, 126, 234, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .detection-info h4 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .detection-info ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        .detection-info li {
+            padding: 5px 0;
+            color: #666;
+        }
+
+        .clothing-summary {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .clothing-summary h3 {
+            margin-bottom: 15px;
+            font-size: 1.4rem;
+        }
+
+        .clothing-list {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .clothing-item {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .upload-section {
+                padding: 30px 20px;
+            }
+
+            .image-container img {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>👗 AI Clothing Detection System</h1>
+            <p>Detect and classify clothing in photos with advanced artificial intelligence technology. Upload a photo and watch the AI identify clothing types!</p>
+        </div>
+
+        <div class="upload-section" onclick="document.getElementById('imageInput').click()">
+            <input type="file" id="imageInput" accept="image/*">
+            <div class="upload-icon">📤</div>
+            <div class="upload-text">Upload Photo</div>
+            <div class="upload-subtext">JPG, PNG, GIF formats supported (Max 10MB)</div>
+        </div>
+
+        <div class="loading">
+            <div class="loading-spinner"></div>
+            <p>AI model is loading and analyzing the photo...</p>
+        </div>
+
+        <div class="analysis-section">
+            <div class="image-container">
+                <img id="uploadedImage" alt="Uploaded photo">
+                <canvas id="detectionCanvas"></canvas>
+            </div>
+        </div>
+
+        <div class="clothing-summary" id="clothingSummary" style="display: none;">
+            <h3>🎯 Detected Clothing Types</h3>
+            <div class="clothing-list" id="clothingList"></div>
+        </div>
+
+        <div class="results-section">
+            <h2 style="text-align: center; color: #333; margin-bottom: 20px;">🔍 Detailed Detection Results</h2>
+            <div class="results-grid" id="resultsGrid"></div>
+        </div>
+
+        <div class="detection-info" id="detectionInfo" style="display: none;">
+            <h4>Technical Details:</h4>
+            <ul id="detectionList"></ul>
+        </div>
+
+        <button class="reset-btn" onclick="resetApp()" style="display: none;" id="resetBtn">🔄 New Analysis</button>
+    </div>
+
+    <script>
+        let model = null;
+        let mobilenetModel = null;
+        let isModelLoaded = false;
+
+        // Real clothing categories - only categories recognizable by COCO-SSD
+        const clothingCategories = {
+            'person': { name: 'Person/Clothing', category: 'General', icon: '👤' },
+            // Accessories and clothing-related objects
+            'handbag': { name: 'Bag', category: 'Accessory', icon: '👜' },
+            'tie': { name: 'Tie', category: 'Accessory', icon: '👔' },
+            'suitcase': { name: 'Suitcase', category: 'Accessory', icon: '🧳' },
+            'umbrella': { name: 'Umbrella', category: 'Accessory', icon: '☂️' },
+            'backpack': { name: 'Backpack', category: 'Accessory', icon: '🎒' },
+            'sports ball': { name: 'Sports Ball', category: 'Sports', icon: '⚽' },
+            'frisbee': { name: 'Frisbee', category: 'Sports', icon: '🥏' },
+            'skis': { name: 'Ski', category: 'Sports', icon: '🎿' },
+            'snowboard': { name: 'Snowboard', category: 'Sports', icon: '🏂' },
+            'surfboard': { name: 'Surfboard', category: 'Sports', icon: '🏄' },
+            'tennis racket': { name: 'Tennis Racket', category: 'Sports', icon: '🎾' },
+            'baseball bat': { name: 'Baseball Bat', category: 'Sports', icon: '⚾' },
+            'baseball glove': { name: 'Baseball Glove', category: 'Sports', icon: '🥎' }
+        };
+
+        // Colorful bounding box palette
+        const colors = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
+            '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
+            '#BB8FCE', '#85C1E9', '#F8C471', '#82E0AA',
+            '#E74C3C', '#3498DB', '#2ECC71', '#F39C12',
+            '#9B59B6', '#1ABC9C', '#34495E', '#E67E22'
+        ];
+
+        // Model loading
+        async function loadModel() {
+            try {
+                if (!isModelLoaded) {
+                    showStatus('Loading AI model...', 'info');
+                    model = await cocoSsd.load();
+                    isModelLoaded = true;
+                    showStatus('Model loaded successfully!', 'success');
+                    setTimeout(() => {
+                        const existingStatus = document.querySelector('.status');
+                        if (existingStatus) existingStatus.remove();
+                    }, 2000);
+                }
+                return model;
+            } catch (error) {
+                console.error('Model loading error:', error);
+                showStatus('Model loading error: ' + error.message, 'error');
+                return null;
+            }
+        }
+
+        // Load mobilenet model
+        async function loadMobilenetModel() {
+            if (!mobilenetModel) {
+                mobilenetModel = await mobilenet.load();
+            }
+            return mobilenetModel;
+        }
+
+        // Classify clothing with mobilenet
+        async function classifyClothing(img) {
+            const model = await loadMobilenetModel();
+            const predictions = await model.classify(img);
+            return predictions;
+        }
+
+        // Show status message
+        function showStatus(message, type) {
+            const existingStatus = document.querySelector('.status');
+            if (existingStatus) {
+                existingStatus.remove();
+            }
+
+            const status = document.createElement('div');
+            status.className = `status ${type}`;
+            status.textContent = message;
+            document.querySelector('.container').appendChild(status);
+
+            if (type === 'success' || type === 'error') {
+                setTimeout(() => {
+                    if (status.parentNode) {
+                        status.remove();
+                    }
+                }, 3000);
+            }
+        }
+
+        // Photo upload handler
+        document.getElementById('imageInput').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // File size check
+            if (file.size > 10 * 1024 * 1024) {
+                showStatus('File size must be less than 10MB!', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                const img = document.getElementById('uploadedImage');
+                img.src = event.target.result;
+
+                // Start analysis after image is loaded
+                img.onload = async function() {
+                    // First, show the image
+                    document.querySelector('.analysis-section').style.display = 'block';
+                    document.querySelector('.loading').style.display = 'block';
+
+                    // Set up canvas size
+                    setupCanvas();
+
+                    // Start analysis with a short delay
+                    setTimeout(async () => {
+                        await analyzeImage();
+                    }, 100);
+                };
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Set up canvas correctly
+        function setupCanvas() {
+            const img = document.getElementById('uploadedImage');
+            const canvas = document.getElementById('detectionCanvas');
+
+            // Set canvas natural size to image's natural size
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+
+            // Set canvas display size to match image's display size
+            canvas.style.width = img.offsetWidth + 'px';
+            canvas.style.height = img.offsetHeight + 'px';
+
+            // Do not change image style! Keep it responsive.
+        }
+
+        // Advanced photo analysis
+        async function analyzeImage() {
+            try {
+                const currentModel = await loadModel();
+                if (!currentModel) {
+                    throw new Error('Model could not be loaded');
+                }
+
+                const img = document.getElementById('uploadedImage');
+                showStatus('Analyzing photo...', 'info');
+
+                // Clothing classification with mobilenet
+                const mobilenetResults = await classifyClothing(img);
+                displayMobilenetResults(mobilenetResults);
+
+                // Perform object detection
+                const predictions = await currentModel.detect(img);
+                console.log('All detections:', predictions);
+
+                // Filter only clothing and accessory detections
+                const clothingDetections = predictions.filter(prediction => {
+                    const className = prediction.class.toLowerCase();
+                    return clothingCategories.hasOwnProperty(className) && prediction.score > 0.4;
+                });
+
+                // If person detected, add general clothing areas
+                const personDetections = predictions.filter(p => p.class === 'person' && p.score > 0.5);
+                if (personDetections.length > 0) {
+                    const personClothing = createPersonClothingAreas(personDetections);
+                    clothingDetections.push(...personClothing);
+                }
+
+                if (clothingDetections.length === 0) {
+                    showStatus('No clothing or accessory found. Try a different photo containing clothing.', 'error');
+                    document.querySelector('.loading').style.display = 'none';
+                    return;
+                }
+
+                console.log('Clothing detections:', clothingDetections);
+
+                // Draw detections
+                drawDetections(clothingDetections);
+
+                // Show results
+                displayClothingSummary(clothingDetections);
+                displayResults(clothingDetections);
+                displayDetectionInfo(clothingDetections);
+
+                // Show sections
+                document.getElementById('clothingSummary').style.display = 'block';
+                document.querySelector('.results-section').style.display = 'block';
+                document.getElementById('detectionInfo').style.display = 'block';
+                document.getElementById('resetBtn').style.display = 'block';
+                document.querySelector('.loading').style.display = 'none';
+
+                showStatus(`${clothingDetections.length} clothing/accessory items detected!`, 'success');
+
+            } catch (error) {
+                console.error('Analysis error:', error);
+                showStatus('Analysis error: ' + error.message, 'error');
+                document.querySelector('.loading').style.display = 'none';
+            }
+        }
+
+        // Create general clothing areas from person detection
+        function createPersonClothingAreas(personDetections) {
+            const clothingAreas = [];
+            let areaId = 1000; // High ID to avoid confusion with other detections
+
+            personDetections.forEach(person => {
+                const [x, y, width, height] = person.bbox;
+                const confidence = person.score;
+
+                // Upper clothing area
+                clothingAreas.push({
+                    id: areaId++,
+                    class: 'upper_clothing',
+                    displayName: 'Upper Clothing Area',
+                    category: 'Clothing',
+                    icon: '👕',
+                    bbox: [x + width * 0.05, y + height * 0.2, width * 0.9, height * 0.35],
+                    score: confidence * 0.8,
+                    type: 'clothing_area'
+                });
+
+                // Lower clothing area
+                clothingAreas.push({
+                    id: areaId++,
+                    class: 'lower_clothing',
+                    displayName: 'Lower Clothing Area',
+                    category: 'Clothing',
+                    icon: '👖',
+                    bbox: [x + width * 0.1, y + height * 0.55, width * 0.8, height * 0.35],
+                    score: confidence * 0.8,
+                    type: 'clothing_area'
+                });
+
+                // Footwear area (only if feet are visible)
+                if (height > 300) { // Assume full body image
+                    clothingAreas.push({
+                        id: areaId++,
+                        class: 'footwear',
+                        displayName: 'Footwear Area',
+                        category: 'Footwear',
+                        icon: '👟',
+                        bbox: [x + width * 0.15, y + height * 0.85, width * 0.7, height * 0.15],
+                        score: confidence * 0.6,
+                        type: 'clothing_area'
+                    });
+                }
+            });
+
+            return clothingAreas;
+        }
+
+        // Draw detections
+        function drawDetections(detections) {
+            const img = document.getElementById('uploadedImage');
+            const canvas = document.getElementById('detectionCanvas');
+            const ctx = canvas.getContext('2d');
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Calculate scale factors (canvas in natural size, img in display size)
+            const scaleX = canvas.width / img.offsetWidth;
+            const scaleY = canvas.height / img.offsetHeight;
+            // Average scale (for font size)
+            const avgScale = (scaleX + scaleY) / 2;
+
+            detections.forEach((detection, index) => {
+                const [x, y, width, height] = detection.bbox;
+                const color = colors[index % colors.length];
+                const confidence = Math.round(detection.score * 100);
+
+                // Scale coordinates
+                const scaledX = x * scaleX;
+                const scaledY = y * scaleY;
+                const scaledWidth = width * scaleX;
+                const scaledHeight = height * scaleY;
+
+                // Scale font size for screen (bigger and readable)
+                const fontSize = Math.max(18, Math.round(22 / avgScale));
+                ctx.font = `bold ${fontSize}px Arial`;
+                ctx.textBaseline = 'top';
+
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
+
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(scaledX + 1.5, scaledY + 1.5, scaledWidth - 3, scaledHeight - 3);
+
+                const itemInfo = clothingCategories[detection.class] || { name: detection.displayName || detection.class, icon: '👔' };
+                const label = `${itemInfo.icon} ${itemInfo.name} (%${confidence})`;
+
+                const textMetrics = ctx.measureText(label);
+                const textWidth = textMetrics.width;
+                const textHeight = fontSize + 10;
+
+                ctx.fillStyle = color;
+                ctx.fillRect(scaledX, scaledY - textHeight - 4, textWidth + 16, textHeight + 4);
+
+                ctx.fillStyle = 'white';
+                ctx.font = `bold ${fontSize}px Arial`;
+                ctx.fillText(label, scaledX + 8, scaledY - textHeight + 2);
+
+                const cornerSize = Math.max(16, Math.round(18 / avgScale));
+                ctx.fillStyle = color;
+                ctx.fillRect(scaledX - 2, scaledY - 2, cornerSize, 4);
+                ctx.fillRect(scaledX - 2, scaledY - 2, 4, cornerSize);
+                ctx.fillRect(scaledX + scaledWidth - cornerSize + 2, scaledY - 2, cornerSize, 4);
+                ctx.fillRect(scaledX + scaledWidth - 2, scaledY - 2, 4, cornerSize);
+                ctx.fillRect(scaledX - 2, scaledY + scaledHeight - 2, cornerSize, 4);
+                ctx.fillRect(scaledX - 2, scaledY + scaledHeight - cornerSize + 2, 4, cornerSize);
+                ctx.fillRect(scaledX + scaledWidth - cornerSize + 2, scaledY + scaledHeight - 2, cornerSize, 4);
+                ctx.fillRect(scaledX + scaledWidth - 2, scaledY + scaledHeight - cornerSize + 2, 4, cornerSize);
+            });
+        }
+
+        // Show clothing summary
+        function displayClothingSummary(detections) {
+            const clothingList = document.getElementById('clothingList');
+            clothingList.innerHTML = '';
+
+            const uniqueClothing = [];
+            const seen = new Set();
+
+            detections.forEach(detection => {
+                const itemInfo = clothingCategories[detection.class] || { name: detection.displayName || detection.class };
+                const itemName = itemInfo.name;
+
+                if (!seen.has(itemName)) {
+                    seen.add(itemName);
+                    uniqueClothing.push(itemName);
+                }
+            });
+
+            // Info: COCO-SSD model cannot distinguish detailed clothing types like "shorts", "sweater". Only general areas and accessories are detected.
+            const info = document.createElement('div');
+            info.style.fontSize = '0.95rem';
+            info.style.color = '#333';
+            info.style.marginBottom = '10px';
+            info.textContent = 'Note: The AI model can only detect general clothing and accessory areas. For detailed types like "shorts" or "sweater", a more advanced model is required.';
+            clothingList.appendChild(info);
+
+            uniqueClothing.forEach(clothing => {
+                const item = document.createElement('div');
+                item.className = 'clothing-item';
+                item.textContent = clothing;
+                clothingList.appendChild(item);
+            });
+        }
+
+        // Show results
+        function displayResults(detections) {
+            const resultsGrid = document.getElementById('resultsGrid');
+            resultsGrid.innerHTML = '';
+
+            detections.forEach((detection, index) => {
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                const color = colors[index % colors.length];
+                card.style.background = `linear-gradient(135deg, ${color}, ${adjustBrightness(color, -20)})`;
+
+                const confidence = Math.round(detection.score * 100);
+                const itemInfo = clothingCategories[detection.class] || {
+                    name: detection.displayName || detection.class,
+                    category: detection.category || 'Unknown',
+                    icon: detection.icon || '👔'
+                };
+
+                card.innerHTML = `
+                    <div style="font-size: 2.5rem; margin-bottom: 15px;">${itemInfo.icon}</div>
+                    <h3>${itemInfo.name}</h3>
+                    <p><strong>Category:</strong> ${itemInfo.category}</p>
+                    <p><strong>Confidence:</strong> %${confidence}</p>
+                    <p><strong>Type:</strong> ${detection.type === 'clothing_area' ? 'Clothing Area' : 'Object Detection'}</p>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width: ${confidence}%"></div>
+                    </div>
+                `;
+
+                resultsGrid.appendChild(card);
+            });
+        }
+
+        // Show detection info
+        function displayDetectionInfo(detections) {
+            const detectionList = document.getElementById('detectionList');
+            detectionList.innerHTML = '';
+
+            detections.forEach((detection, index) => {
+                const li = document.createElement('li');
+                const [x, y, width, height] = detection.bbox;
+                const itemInfo = clothingCategories[detection.class] || { name: detection.displayName || detection.class };
+
+                li.innerHTML = `
+                    <strong>${itemInfo.name}</strong> -
+                    Confidence: %${Math.round(detection.score * 100)} |
+                    Position: (${Math.round(x)}, ${Math.round(y)}) |
+                    Size: ${Math.round(width)}×${Math.round(height)}px |
+                    Type: ${detection.type === 'clothing_area' ? 'Clothing Area' : 'Object Detection'}
+                `;
+                detectionList.appendChild(li);
+            });
+        }
+
+        // Show mobilenet results
+        function displayMobilenetResults(results) {
+            let resultDiv = document.getElementById('mobilenetResults');
+            if (!resultDiv) {
+                resultDiv = document.createElement('div');
+                resultDiv.id = 'mobilenetResults';
+                resultDiv.style.margin = '20px auto';
+                resultDiv.style.maxWidth = '600px';
+                resultDiv.style.background = 'linear-gradient(90deg,#f8ffae,#43c6ac)';
+                resultDiv.style.borderRadius = '12px';
+                resultDiv.style.padding = '18px 24px';
+                resultDiv.style.fontSize = '1.1rem';
+                resultDiv.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)';
+                document.querySelector('.container').insertBefore(resultDiv, document.getElementById('clothingSummary'));
+            }
+            resultDiv.innerHTML = '<b>📋 Clothing Classification (Mobilenet):</b><br>' +
+                results.map(r => `${r.className}: <b>%${Math.round(r.probability*100)}</b>`).join('<br>');
+        }
+
+        // Adjust color brightness
+        function adjustBrightness(hex, percent) {
+            const num = parseInt(hex.replace("#", ""), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) + amt;
+            const G = (num >> 8 & 0x00FF) + amt;
+            const B = (num & 0x0000FF) + amt;
+            return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+                (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+                (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
+        }
+
+        // Reset the app
+        function resetApp() {
+            document.querySelector('.analysis-section').style.display = 'none';
+            document.querySelector('.results-section').style.display = 'none';
+            document.getElementById('clothingSummary').style.display = 'none';
+            document.getElementById('detectionInfo').style.display = 'none';
+            document.getElementById('resetBtn').style.display = 'none';
+            document.getElementById('imageInput').value = '';
+
+            const canvas = document.getElementById('detectionCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const existingStatus = document.querySelector('.status');
+            if (existingStatus) {
+                existingStatus.remove();
+            }
+        }
+
+        // Load model when page is loaded
+        window.addEventListener('load', () => {
+            loadModel();
+        });
+    </script>
+</body>
+</html>
